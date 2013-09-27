@@ -3,7 +3,7 @@ library(class)
 library(ggplot2)
 
 #################################################
-# PREPROCESSING
+# PREPROCESSING #
 #################################################
 
 data <- iris                # create copy of iris dataframe
