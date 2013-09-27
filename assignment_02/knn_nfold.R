@@ -94,27 +94,29 @@ knn.nfold <- function(n, k, data.set=data, label.set=labels)
   for (x in 1:n)                  # perform fit for n-folds
   {
     test.index <- as.integer(rownames(fold.list[[x]]))           # obtain indices of the test set (current fold)
-    test.labels <- as.factor(as.matrix(label.set)[test.index, ]) # extract test labels from list of all labels
+    test.labels <- factor()
+    levels(test.labels) <- levels(label.set)                     # ensure all levels are present in test labels to compare with knn.fit
+    test.labels <- (as.matrix(labels)[test.index, ])             # extract test labels from list of all labels
     knn.fit <- knn(train = data.set[-test.index,],               # training set (excludes current test fold)
                    test = fold.list[[x]],                        # test set (current fold)
                    cl = label.set[-test.index],                  # true labels, excluding test fold labels
                    k = k                                         # number of NN to poll
     )
-    levels(test.labels) <- levels(label.set)                     # ensure all levels are present in test labels to compare with knn.fit
     this.err <- sum(test.labels != knn.fit) / length(test.labels)    # store gzn err
-    cat('\n', '    k = ', k, ', fold ', x, ' of ', n,': error = ', this.err, sep='')     # print params and fold error
+    print(table(test.labels, knn.fit))                               # print confusion matrix
+    cat('\n', '    k = ', k, ', fold ', x, ' of ', n,': error rate = ', this.err,'\n\n', sep='')     # print params and fold error
         
     fold.errs <- rbind(fold.errs, this.err)     # append err to total results
   }
   # n-fold generalization error = average over all iterations
   names(fold.errs)  <- "error"                                # name column in results object
   mean.error = mean(fold.errs$error)                          # calculate mean error over all results
-  cat('\n\n', 'KNN Classification with k = ', k, '\n')        # print params
-  cat('\n', 'Mean generalization error for', n,'- fold cross validation = ', mean.error, '\n\n')   # print mean error
+  cat('\n', 'KNN Classification with k = ', k, '\n')          # print params
+  cat('\n', 'Mean generalization error rate using', n,'- fold cross validation = ', mean.error, '\n\n')   # print mean error
   return (mean.error)
 }
 
-# test the k value range of interest (7-15) from earlier plot with 5, 10 and 20 - fold cross validation
+# test the k value range of interest (7-15) from earlier plot with 5-, 10- and 20-fold cross validation
 test.fold = data.frame()
 for (n in c(5, 10, 20))
 {  
@@ -134,3 +136,5 @@ test.plot <- test.plot + ggtitle("Generalization Error v K for 10-, 15- and 20-F
 
 # draw results plot
 print(test.plot)
+
+
