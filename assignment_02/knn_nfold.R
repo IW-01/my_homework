@@ -133,7 +133,7 @@ test.fold
 test.fold$n <- as.character(test.fold$n)    
 test.plot <- ggplot(test.fold, aes(x=k, y=error, group = n, colour = n)) + geom_point() + geom_line()
 test.plot <- test.plot + ggtitle("Generalization Error v K for 10-, 15- and 20-Fold Cross Validation")
-
+test.plot <- test.plot + ylab("Mean Generalization Error") + xlab("K-value")
 # draw results plot
 print(test.plot)
 
