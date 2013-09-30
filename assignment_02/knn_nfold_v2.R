@@ -6,6 +6,8 @@ library(ggplot2)
 # FUNCTIONS
 ################################################
 
+# Function to return random indices to use for training set
+
 cv.indices <- function (train.pct, seed.val, data.set=data)
 {
   set.seed(seed.val)         # initialize random seed for consistency
@@ -18,15 +20,18 @@ cv.indices <- function (train.pct, seed.val, data.set=data)
   
 }
 
-knn.nfold <- function (k, n, train.pct, data.set=data, label.set=labels)
+# function to carry out knn n-times using specified k and % of data used for training
+# returns mean generalization error
+
+knn.nfold <- function (k, n, train.pct, data.set=data, label.set=labels) 
 {
   err.rates <- data.frame()
   for (x in 1:n)
   {
-    train.index <- cv.indices(train.pct, x, data.set)
-    test.labels <- label.set[-train.index]
+    train.index <- cv.indices(train.pct, x, data.set)            # function call to generate random training set indices
+    test.labels <- label.set[-train.index]                       # labels for test set
     knn.fit <- knn(train = data.set[train.index,],               # training set (excludes current test fold)
-                   test = data.set[-train.index,],                        # test set (current fold)
+                   test = data.set[-train.index,],               # test set (current fold)
                    cl = label.set[train.index],                  # true labels, excluding test fold labels
                    k = k                                         # number of NN to poll
     )
