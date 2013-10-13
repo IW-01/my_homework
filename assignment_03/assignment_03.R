@@ -7,7 +7,7 @@ library(DAAG)
 library(tm)
 library(ggplot2)
 #library(qdap)
-Sys.setenv(JAVA_HOME="")
+#Sys.setenv(JAVA_HOME="")
 library(RWeka)
 
 # define Mean Absolute Error
@@ -298,7 +298,12 @@ set.seed(42)
 trainer$fold <- sample(1:10, nrow(trainer), replace=TRUE)
 ngram.errors <- sapply(1:10, error_from_fold)
 print(ngram.errors)
-print(mean(ngram.errors)) # MAE 7472
+print(mean(ngram.errors)) # MAE 7472 (7586 when using ngrams appearing in 25 documents)
+
+
+# Cross validation MAE reduced from 8748 with just categorical variables
+# to 8080 with categorical variables and words from title
+# to 7471 with categorical variables and ngrams from title
 
 
 ################################################################
@@ -323,19 +328,20 @@ write.csv(submission, "my_submission.csv", row.names=FALSE)
 
 ########################################################################
 # Step 7 - use 50k training set
+# Haven't run this yet
 ########################################################################
 train <- read.csv("train_50k.csv")
 test <- read.csv("test.csv")
 
 # Combine them for the column(s) we want to use as predictors in our model
-all <- rbind(train[, c("Title", "Category","Company", "LocationNormalized", "ContractType","ContractTime","SourceName"), drop=F],
-             test[, c("Title", "Category", "Company","LocationNormalized", "ContractType","ContractTime","SourceName"), drop=F])
+all <- rbind(train[, c("Title", "Category"), drop=F],
+             test[, c("Title", "Category"), drop=F])
 
 # Explicitly construct all the dummy columns for the Category variable
-allx <- model.matrix(~LocationNormalized + Company + Category + ContractType:ContractTime + SourceName, data=all)
+allx <- model.matrix(~Category, data=all)
 
 # create corpus from $Title
-src <- DataframeSource(data.frame(all$Title)) # You can use any of the text columns, not just Title.
+src <- DataframeSource(data.frame(all$Title)) 
 corp <- Corpus(src)
 
 # clean up corpus
@@ -370,7 +376,7 @@ y <- as.matrix(trainer[,sal.col])
 
 # run cv.glmnet4
 glmcv.model4 <- cv.glmnet(x, log(y), type.measure="mae")
-print(glmcv.model4) # MAE (log SalaryNormalized)
+print(glmcv.model4) # MAE 
 
 # check how model does on training set
 test.predict.reg <- predict(glmcv.model4, x)
@@ -384,4 +390,4 @@ set.seed(42)
 trainer$fold <- sample(1:10, nrow(trainer), replace=TRUE)
 50k.errors <- sapply(1:10, error_from_fold)
 print(50k.errors)
-print(mean(50.errors)) # MAE 
+print(mean(50k.errors)) # 
