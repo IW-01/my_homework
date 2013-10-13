@@ -15,7 +15,17 @@ mae <- function(one, other) {
   return(mean(abs(one - other)))
 } # Make a note about R scoping!
 
-
+# define Error From Fold
+error_from_fold <- function(n) {
+  last.col <- ncol(trainer)
+  trainx <-as.matrix(subset(trainer, n != fold)[,-((last.col - 1):last.col)])
+  trainy <-as.matrix(subset(trainer, n != fold)[,(last.col - 1)])
+  model <- glmnet(trainx, log(trainy), lambda=best.lambda)
+  testx <- as.matrix(subset(trainer, n == fold)[,-((last.col - 1):last.col)])
+  testy <-as.matrix(subset(trainer, n == fold)[,(last.col - 1)])
+  error <- mae(exp(predict(model, testx)), testy) 
+  return(error)
+}
 
 ####################################################
 # STEP 0 - Read in training data and review it
@@ -114,6 +124,7 @@ mae(exp(fitted(fit9)), alltrain$SalaryNormalized)
 # R2 = 0.556 MAE = 6993.274 , same as fit8
 
 # Tried other interactions of variables with more levels but could not run them with current computing resources
+# Decide to use all variables as they all seem to have some predictive power
 
 # Now format training and tests set consistently for these dummy categorical variables:
 
@@ -133,32 +144,52 @@ trainer <- cbind(as.data.frame(allx[1:10000,]), train[,"SalaryNormalized", drop=
 tester <- cbind(as.data.frame(allx[10001:15000,]), data.frame(SalaryNormalized=NA))
 
 ############################################################
-# STEP 3/5 -  Use cross validation DAAG and glmnet
+# STEP 3/5 -  Use cross validation, DAAG and glmnet
 ############################################################
 
 #modelDAAG <- CVlm(df = trainer, form.lm = formula(log(SalaryNormalized) ~ .), m=10)
 #pred <- predict(modelDAAG, trainer)
 
+# DAAG was very slow and ouput was a bit confusing
+
+# prepare data for glmnet
 x <- as.matrix(trainer[-3928])
 y <- as.matrix(trainer[3928])
-glmcv.model <- cv.glmnet(x, log(y), type.measure="mae")
-print(glmcv.model)
 
+# run glmnet
+glmcv.model1 <- cv.glmnet(x, log(y), type.measure="mae")
+print(glmcv.model1) # MAE with best lambda value is 0.2706664 (log of SalaryNormalized)
+
+# MAE in the cv.glmnet model is the log value, unsure how to back transform the errors
+# so check predictions against training set
 test.predict.reg <- predict(glmcv.model, x)
-mae(exp(test.predict.reg), y)
+mae(exp(test.predict.reg), y) # MAE for training set is 8095 (SalaryNormalized)
+
+# Try own cv using bestlambda value from glmnet
+best.lambda <- glmcv.model1$lambda.min
+set.seed(42)
+trainer$fold <- sample(1:10, nrow(trainer), replace=TRUE)
+fold.errors <- sapply(1:10, error_from_fold)
+print(fold.errors)
+print(mean(fold.errors)) # MAE 8748 (SalaryNormalized)
 
 ############################################################
 # STEP 4 -  Location tree
 ############################################################
-loc.tree <- read.csv("Location_Tree2.csv", header = FALSE)
-names(loc.tree) <- c("Country", "Region", "County", "Town")
-all.loc <- rbind(train[, "LocationRaw", drop=F],
-                 test[, "LocationRaw", drop=F])
-write.csv(all.loc, "all_loc.csv")
-all.loc.txt <- read.delim("all_loc.txt", header = FALSE)
-loc1 <- all.loc.txt[2]
-names(loc1) <- "County"
-loc.data <- merge(loc1, loc.tree, by="County")
+
+# Intended to use the broader regions in the location tree instead of LocationNormalized
+# but did not manage to find a good way to lookup this value from LocationRaw or
+# LocationNormalized
+
+#loc.tree <- read.csv("Location_Tree2.csv", header = FALSE)
+#names(loc.tree) <- c("Country", "Region", "County", "Town")
+#all.loc <- rbind(train[, "LocationRaw", drop=F],
+#                 test[, "LocationRaw", drop=F])
+#write.csv(all.loc, "all_loc.csv")
+#all.loc.txt <- read.delim("all_loc.txt", header = FALSE)
+#loc1 <- all.loc.txt[2]
+#names(loc1) <- "County"
+
 
 
 ####################################################
@@ -202,48 +233,44 @@ x <- as.matrix(trainer[,-sal.col])
 y <- as.matrix(trainer[,sal.col])
 
 # run cv.glmnet
-glmcv.model <- cv.glmnet(x, log(y), type.measure="mae")
-print(glmcv.model)
+glmcv.model2 <- cv.glmnet(x, log(y), type.measure="mae")
+print(glmcv.model2) # MAE 0.2469484 (log of SalaryNormalized)
 
 # check how model does on training set
-test.predict.reg <- predict(glmcv.model, x)
-mae(exp(test.predict.reg),y)
+test.predict.reg <- predict(glmcv.model2, x)
+mae(exp(test.predict.reg),y) # MAE 7514 (SalaryNormalized)
 
 # obtain best lambda value from cv.glmnet model
-best.lambda <- glmcv.model$lambda.min
+best.lambda <- glmcv.model2$lambda.min
 
 # do some cv using glmnet and best lambda
-# 
 set.seed(42)
 trainer$fold <- sample(1:10, nrow(trainer), replace=TRUE)
-
-# define Error From Fold
-error_from_fold <- function(n) {
-  last.col <- ncol(trainer)
-  trainx <-as.matrix(subset(trainer, n != fold)[,-((last.col - 1):last.col)])
-  trainy <-as.matrix(subset(trainer, n != fold)[,(last.col - 1)])
-  model <- glmnet(trainx, log(trainy), lambda=best.lambda)
-  testx <- as.matrix(subset(trainer, n == fold)[,-((last.col - 1):last.col)])
-  testy <-as.matrix(subset(trainer, n == fold)[,(last.col - 1)])
-  error <- mae(exp(predict(model, testx)), testy) 
-  return(error)
-}
-
 fold.errors <- sapply(1:10, error_from_fold)
 print(fold.errors)
-print(mean(fold.errors))
+print(mean(fold.errors)) # MAE 8079 (SalaryNormalized)
 
 #####################################################################
-# Try n-grams
+# Try n-grams from $Title
 ######################################################################
-
+# clean up corpus
 c1 <- tm_map(c, removeWords, stopwords('english'))
 c2 <- tm_map(c1, removePunctuation)
 c3 <- tm_map(c2, removeNumbers)
+
+# use NGramTokenizer function from RWeka package
 BigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 2, max = 2))
+
+# Create dtm using tokenizer for 2-grams
 dtm <- DocumentTermMatrix(c3, control = list(tokenize = BigramTokenizer, minDocFreq = 50))
+
+# Get list of 2-grams which appear in at least 15 documents
 most.freq <- findFreqTerms(dtm, 15)
+
+# Convert tomatrix to use with glmnet
 ngram_data <- as.matrix(dtm[,most.freq])
+
+# Combine with categorical variables
 text_data <- cbind(allx, ngram_data)
 
 # Split out the training and test data, adding in the response variable as well
@@ -256,33 +283,105 @@ x <- as.matrix(trainer[,-sal.col])
 y <- as.matrix(trainer[,sal.col])
 
 # run cv.glmnet
-glmcv.model <- cv.glmnet(x, log(y), type.measure="mae")
-print(glmcv.model)
+glmcv.model3 <- cv.glmnet(x, log(y), type.measure="mae")
+print(glmcv.model3) # MAE 0.2257973 (log SalaryNormalized)
 
 # check how model does on training set
-test.predict.reg <- predict(glmcv.model, x)
-mae(exp(test.predict.reg),y)
+test.predict.reg <- predict(glmcv.model3, x)
+mae(exp(test.predict.reg),y) # MAE 6786 (SalaryNormalized)
 
 # obtain best lambda value from cv.glmnet model
-best.lambda <- glmcv.model$lambda.min
+best.lambda <- glmcv.model3$lambda.min
 
 # do some cv using glmnet and best lambda
-# 
 set.seed(42)
 trainer$fold <- sample(1:10, nrow(trainer), replace=TRUE)
+ngram.errors <- sapply(1:10, error_from_fold)
+print(ngram.errors)
+print(mean(ngram.errors)) # MAE 7472
 
-# define Error From Fold
-error_from_fold <- function(n) {
-  last.col <- ncol(trainer)
-  trainx <-as.matrix(subset(trainer, n != fold)[,-((last.col - 1):last.col)])
-  trainy <-as.matrix(subset(trainer, n != fold)[,(last.col - 1)])
-  model <- glmnet(trainx, log(trainy), lambda=best.lambda)
-  testx <- as.matrix(subset(trainer, n == fold)[,-((last.col - 1):last.col)])
-  testy <-as.matrix(subset(trainer, n == fold)[,(last.col - 1)])
-  error <- mae(exp(predict(model, testx)), testy) 
-  return(error)
-}
 
-fold.errors <- sapply(1:10, error_from_fold)
-print(fold.errors)
-print(mean(fold.errors))
+################################################################
+# Make Prediction file
+################################################################
+# train model using entire training set
+best.lambda <- 0.001914475  # as determined using cv.glmnet for this model
+x <- as.matrix(trainer[,-sal.col])
+y <- as.matrix(trainer[,sal.col])
+finalmodel <- glmnet(x, log(y), lambda=best.lambda)
+
+tester.x <- as.matrix(tester)
+
+predictions <- exp(predict(finalmodel, tester.x))
+# What are these predictions going to be?
+
+# Put the submission together and write it to a file
+submission <- data.frame(Id=test$Id, Salary=predictions)
+names(submission) <- c("Id","Salary")
+write.csv(submission, "my_submission.csv", row.names=FALSE)
+
+
+########################################################################
+# Step 7 - use 50k training set
+########################################################################
+train <- read.csv("train_50k.csv")
+test <- read.csv("test.csv")
+
+# Combine them for the column(s) we want to use as predictors in our model
+all <- rbind(train[, c("Title", "Category","Company", "LocationNormalized", "ContractType","ContractTime","SourceName"), drop=F],
+             test[, c("Title", "Category", "Company","LocationNormalized", "ContractType","ContractTime","SourceName"), drop=F])
+
+# Explicitly construct all the dummy columns for the Category variable
+allx <- model.matrix(~LocationNormalized + Company + Category + ContractType:ContractTime + SourceName, data=all)
+
+# create corpus from $Title
+src <- DataframeSource(data.frame(all$Title)) # You can use any of the text columns, not just Title.
+corp <- Corpus(src)
+
+# clean up corpus
+corp <- tm_map(corp, tolower)
+corp <- tm_map(corp, removeWords, stopwords('english'))
+corp <- tm_map(corp, removePunctuation)
+corp <- tm_map(corp, removeNumbers)
+
+# use NGramTokenizer function from RWeka package
+BigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 2, max = 2))
+
+# Create dtm using tokenizer for 2-grams
+dtm <- DocumentTermMatrix(corp, control = list(tokenize = BigramTokenizer, minDocFreq = 50))
+
+# Get list of 2-grams which appear in at least 15 documents
+most.freq <- findFreqTerms(dtm, 15)
+
+# Convert tomatrix to use with glmnet
+ngram_data <- as.matrix(dtm[,most.freq])
+
+# Combine with categorical variables
+text_data <- cbind(allx, ngram_data)
+
+# Split out the training and test data, adding in the response variable as well
+trainer <- cbind(as.data.frame(text_data[1:50000,]), train[,"SalaryNormalized", drop=F])
+tester <- cbind(as.data.frame(text_data[50001:55000,]), data.frame(SalaryNormalized=NA))
+sal.col <- ncol(trainer)
+
+# Prepare data for cv.glmnet
+x <- as.matrix(trainer[,-sal.col])
+y <- as.matrix(trainer[,sal.col])
+
+# run cv.glmnet4
+glmcv.model4 <- cv.glmnet(x, log(y), type.measure="mae")
+print(glmcv.model4) # MAE (log SalaryNormalized)
+
+# check how model does on training set
+test.predict.reg <- predict(glmcv.model4, x)
+mae(exp(test.predict.reg),y) # MAE (SalaryNormalized)
+
+# obtain best lambda value from cv.glmnet model
+best.lambda <- glmcv.model4$lambda.min
+
+# do some cv using glmnet and best lambda
+set.seed(42)
+trainer$fold <- sample(1:10, nrow(trainer), replace=TRUE)
+50k.errors <- sapply(1:10, error_from_fold)
+print(50k.errors)
+print(mean(50.errors)) # MAE 
